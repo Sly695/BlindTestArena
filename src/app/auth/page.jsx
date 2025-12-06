@@ -1,42 +1,46 @@
 "use client";
-import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Formik, Form, Field, ErrorMessage } from "formik";
+import * as Yup from "yup";
 
 export default function AuthPage() {
   const [isSignUp, setIsSignUp] = useState(false);
-  const [formData, setFormData] = useState({
-    username: "",
-    email: "",
-    password: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const { login, register } = useAuth();
   const router = useRouter();
 
-  // Gère la saisie des inputs
-  const handleChange = (e) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
+  // 🧩 Schémas de validation Yup
+  const validationSchema = Yup.object({
+    username: isSignUp
+      ? Yup.string()
+          .min(3, "Minimum 3 caractères")
+          .max(20, "Maximum 20 caractères")
+          .required("Pseudo requis")
+      : Yup.string(),
+    email: Yup.string()
+      .email("Adresse mail invalide")
+      .required("Email requis"),
+    password: Yup.string()
+      .min(6, "Minimum 6 caractères")
+      .required("Mot de passe requis"),
+  });
+  
 
-  // Gère la soumission du formulaire
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
+  // 🚀 Gestion de la soumission
+  const handleSubmit = async (values, { setSubmitting, setStatus }) => {
+    setStatus(null);
     try {
       if (isSignUp) {
-        await register(formData.username, formData.email, formData.password);
+        await register(values.username, values.email, values.password);
       } else {
-        await login(formData.email, formData.password);
+        await login(values.email, values.password);
       }
-      router.push("/home"); // ✅ redirige vers la page principale après succès
+      router.push("/home");
     } catch (err) {
-      setError(err.message || "Une erreur est survenue");
+      setStatus(err.message || "Une erreur est survenue");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -44,7 +48,7 @@ export default function AuthPage() {
     <main className="min-h-screen flex items-center justify-center bg-base-200 p-6">
       <div className="card w-full max-w-md bg-base-100 shadow-xl">
         <div className="card-body">
-          {/* Header */}
+          {/* 🎵 Header */}
           <div className="text-center mb-6 space-y-1">
             <h1 className="text-3xl font-extrabold text-primary">
               🎵 BlindTest Arena
@@ -56,63 +60,90 @@ export default function AuthPage() {
             </p>
           </div>
 
-          {/* Formulaire */}
-          <form onSubmit={handleSubmit} className="space-y-3">
-            {isSignUp && (
-              <input
-                type="text"
-                name="username"
-                placeholder="Pseudo"
-                className="input input-bordered w-full"
-                value={formData.username}
-                onChange={handleChange}
-                required
-              />
+          {/* 🧾 Formulaire avec Formik */}
+          <Formik
+            initialValues={{
+              username: "",
+              email: "",
+              password: "",
+            }}
+            validationSchema={validationSchema}
+            onSubmit={handleSubmit}
+          >
+            {({ isSubmitting, status }) => (
+              <Form className="space-y-3">
+                {/* Pseudo */}
+                {isSignUp && (
+                  <div className="form-control">
+                    <Field
+                      type="text"
+                      name="username"
+                      placeholder="Pseudo"
+                      className="input input-bordered w-full"
+                    />
+                    <ErrorMessage
+                      name="username"
+                      component="div"
+                      className="text-error text-sm mt-1"
+                    />
+                  </div>
+                )}
+
+                {/* Email */}
+                <div className="form-control">
+                  <Field
+                    type="email"
+                    name="email"
+                    placeholder="Adresse mail"
+                    className="input input-bordered w-full"
+                  />
+                  <ErrorMessage
+                    name="email"
+                    component="div"
+                    className="text-error text-sm mt-1"
+                  />
+                </div>
+
+                {/* Mot de passe */}
+                <div className="form-control">
+                  <Field
+                    type="password"
+                    name="password"
+                    placeholder="Mot de passe"
+                    className="input input-bordered w-full"
+                  />
+                  <ErrorMessage
+                    name="password"
+                    component="div"
+                    className="text-error text-sm mt-1"
+                  />
+                </div>
+
+                {/* Message d’erreur global */}
+                {status && (
+                  <div className="alert alert-error py-2 px-3 text-sm">
+                    ⚠️ {status}
+                  </div>
+                )}
+
+                {/* Bouton principal */}
+                <button
+                  type="submit"
+                  className={`btn btn-secondary w-full mt-3 font-semibold ${
+                    isSubmitting ? "loading" : ""
+                  }`}
+                  disabled={isSubmitting}
+                >
+                  {isSignUp ? "Créer mon compte" : "Se connecter"}
+                </button>
+              </Form>
             )}
-
-            <input
-              type="email"
-              name="email"
-              placeholder="Adresse mail"
-              className="input input-bordered w-full"
-              value={formData.email}
-              onChange={handleChange}
-              required
-            />
-
-            <input
-              type="password"
-              name="password"
-              placeholder="Mot de passe"
-              className="input input-bordered w-full"
-              value={formData.password}
-              onChange={handleChange}
-              required
-            />
-
-            {/* Message d’erreur */}
-            {error && (
-              <div className="alert alert-error py-2 px-3 text-sm">
-                ⚠️ {error}
-              </div>
-            )}
-
-            {/* Bouton principal */}
-            <button
-              type="submit"
-              className={`btn btn-secondary w-full mt-3 font-semibold ${
-                loading ? "loading" : ""
-              }`}
-              disabled={loading}
-            >
-              {isSignUp ? "Créer mon compte" : "Se connecter"}
-            </button>
-          </form>
+          </Formik>
 
           {/* Séparateur */}
           <div className="divider my-6"></div>
 
-          {/* Toggle connexion / inscription */}
+          {/* 🔁 Toggle connexion / inscription */}
           <p className="text-center text-sm text-base-content/70">
             {isSignUp ? (
               <>

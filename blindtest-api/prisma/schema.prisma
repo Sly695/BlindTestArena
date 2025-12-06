@@ -8,15 +8,16 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  username    String   @unique
-  email       String   @unique
+  id          String      @id @default(uuid())
+  username    String      @unique
+  email       String      @unique
   password    String
   avatarUrl   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  gamesHosted Game[]   @relation("UserHostedGames")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  gamesHosted Game[]      @relation("UserHostedGames")
   players     Player[]
+  ThemeVote   ThemeVote[]
 }
 
 model Game {
@@ -26,12 +27,13 @@ model Game {
   visibility GameVisibility @default(PUBLIC)
   rounds     Int            @default(5)
   status     GameStatus     @default(WAITING)
-  maxPlayers Int            @default(2)   
+  maxPlayers Int            @default(2)
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
   host       User           @relation("UserHostedGames", fields: [hostId], references: [id])
   players    Player[]
   roundsData Round[]
+  ThemeVote  ThemeVote[]
 }
 
 model Player {
@@ -47,12 +49,34 @@ model Player {
 model Round {
   id         String   @id @default(uuid())
   gameId     String
+  game       Game     @relation(fields: [gameId], references: [id])
+
+  roundIndex Int
+
   songTitle  String
   artist     String
   previewUrl String
-  answerTime Int
+  coverUrl   String?
+  spotifyUrl String?
+
+  status     RoundStatus @default(WAITING)
+
+  // Date de début et fin
+  startsAt   DateTime?
+  endsAt     DateTime?
+
+  answerTime Int @default(30) // durée en secondes
+
   createdAt  DateTime @default(now())
-  game       Game     @relation(fields: [gameId], references: [id])
+
+  @@unique([gameId, roundIndex])
+}
+
+enum RoundStatus {
+  WAITING
+  STARTED
+  FINISHED
+  REVEALED
 }
 
 enum GameVisibility {
@@ -64,4 +88,17 @@ enum GameStatus {
   WAITING
   PLAYING
   FINISHED
+}
+
+model ThemeVote {
+  id        String   @id @default(uuid())
+  gameId    String
+  userId    String
+  theme     String
+  createdAt DateTime @default(now())
+
+  game Game @relation(fields: [gameId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([gameId, userId]) // 🔒 empêche plusieurs votes d’un même joueur pour une même partie
 }

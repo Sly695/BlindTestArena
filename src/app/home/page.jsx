@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { LogOut } from "lucide-react";
 import useProtectedRoute from "@/hooks/useProtectedRoute";
+import { io } from "socket.io-client";
 
 export default function LobbyPage() {
   useProtectedRoute(); // 🔒 redirige si pas connecté
@@ -27,18 +28,10 @@ export default function LobbyPage() {
 
   const [visibility, setVisibility] = useState("PUBLIC");
 
-  const [loading, setLoading] = useState(false);
+  const [activeGame, setActiveGame] = useState(null);
+  const [checkingGame, setCheckingGame] = useState(true);
 
-  console.log(token),
-    // 🧍 Simulation des joueurs connectés
-    useEffect(() => {
-      const mockPlayers = [
-        { id: 1, name: "Alice" },
-        { id: 2, name: "Bob" },
-        { id: 3, name: user?.username || "Sly695" },
-      ];
-      setPlayers(mockPlayers);
-    }, [user]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!isCreateOpen) {
@@ -51,13 +44,47 @@ export default function LobbyPage() {
     fetchGames();
 
     // 🔁 Rafraîchit toutes les 10 secondes
-    const interval = setInterval(fetchGames, 10000);
+    const interval = setInterval(fetchGames, 30000);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!token) return;
+
+    const checkActiveGame = async () => {
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/me/game`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        const data = await res.json();
+
+        if (data?.game) {
+          setActiveGame(data.game);
+        } else {
+          setActiveGame(null);
+        }
+      } catch (error) {
+        console.error("Erreur vérification partie active :", error);
+      } finally {
+        setCheckingGame(false);
+      }
+    };
+
+    checkActiveGame();
+  }, [token]);
+
   const handleCreateGame = async (e) => {
     e.preventDefault();
-    if (!token) return alert("Tu dois être connecté pour créer une partie !");
+
+    if (!token) {
+      alert("Tu dois être connecté pour créer une partie !");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -72,15 +99,55 @@ export default function LobbyPage() {
         body: JSON.stringify({
           visibility: visibilityValue,
           rounds: Number(rounds),
-          maxPlayers: Number(maxPlayers)
+          maxPlayers: Number(maxPlayers),
         }),
       });
 
       const data = await res.json();
+
       if (!res.ok) throw new Error(data.error || "Erreur lors de la création");
 
+      if (res.ok && data?.game) {
+        const game = data.game;
+
+        // 🔌 connexion socket persistante
+        const socket = io("http://localhost:3001", {
+          transports: ["websocket"],
+        });
+
+        socket.on("connect", () => {
+          console.log("🟢 Connecté WS, création de la room...");
+
+          // 🏠 Création de la room pour cette partie
+          socket.emit("create_game", {
+            gameId: game.id,
+            host: { id: user?.id, username: user?.username },
+          });
+
+          // optionnel : écouter confirmation serveur
+          socket.on("room_created", (room) => {
+            console.log("✅ Room créée :", room);
+          });
+
+          // redirection vers la page de jeu
+          router.push(`/blind?gameId=${game.id}`);
+        });
+      }
+
       setIsCreateOpen(false);
-      router.push(`/blind?gameId=${data.game.id}`);
+
+      // 🧩 Vérifie que l’API a bien renvoyé un gameId avant redirection
+      const gameId = data?.game?.id;
+      if (gameId) {
+        router.push(`/blind?gameId=${gameId}`);
+      } else {
+        console.error(
+          "Erreur lors de la redirection — gameId introuvable :",
+          data
+        );
+      }
+
+      // pas de else → on ne fait rien si pas d'id
     } catch (err) {
       console.error("Erreur création partie :", err);
       alert(err.message || "Erreur serveur");
@@ -130,8 +197,11 @@ export default function LobbyPage() {
         );
 
       // ✅ Redirection vers la page du blind test
+      console.log(data);
       setIsJoinOpen(false);
-      router.push(`/blind?gameId=${data.game.id}`);
+      setTimeout(() => {
+        router.push(`/blind?gameId=${data.game?.id || data?.id}`);
+      }, 150);
     } catch (err) {
       console.error("Erreur handleJoinGame :", err);
       alert(err.message || "Erreur serveur");
@@ -140,6 +210,26 @@ export default function LobbyPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-base-200 p-6">
+      {/* 🌟 NAVBAR "Rejoindre la partie en cours" */}
+      {!checkingGame && activeGame && (
+        <nav className="fixed top-0 left-0 w-full bg-primary text-white shadow-md z-50">
+          <div className="max-w-5xl mx-auto flex justify-between items-center px-6 py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-xl font-semibold">🎵 BlindTest Arena</span>
+              <span className="badge badge-accent text-sm">
+                Partie en cours
+              </span>
+            </div>
+
+            <button
+              onClick={() => router.push(`/blind?gameId=${activeGame.id}`)}
+              className="btn btn-sm btn-secondary text-white font-medium shadow-md hover:shadow-lg transition-all"
+            >
+              ➡️ Rejoindre la partie
+            </button>
+          </div>
+        </nav>
+      )}
       <div className="card relative w-full max-w-4xl bg-base-100 shadow-xl p-6 space-y-8">
         {/* 🔒 Bouton logout */}
         <button
@@ -184,13 +274,18 @@ export default function LobbyPage() {
         </div>
 
         {/* GRIDS */}
-        <div className="grid sm:grid-cols-2 gap-8">
+        <div className="grid sm:grid-cols-1">
           {/* LISTE DES PARTIES */}
           <div>
             <div className="divider">
-              🎮 Parties disponibles ({games.length})
+              🎮 Parties disponibles (
+              {games?.filter(
+                (game) =>
+                  game.visibility === "PUBLIC" &&
+                  game.players.length < game.maxPlayers // 👈 reste de la place
+              ).length || 0}
+              )
             </div>
-
             {games.length === 0 ? (
               <p className="text-center text-base-content/70 italic">
                 Aucune partie créée pour l’instant... sois le premier 🎮
@@ -199,66 +294,37 @@ export default function LobbyPage() {
               <ul className="grid grid-cols-1 gap-3">
                 {Array.isArray(games) && games.length > 0 ? (
                   games
-                  .filter((game) => game.players.length < game.maxPlayers)
-                  .map((game) => (
-                    <li
-                      key={game.id}
-                      onClick={() => handleJoinGame(null, game.code)}
-                      className="cursor-pointer p-4 bg-base-200 rounded-xl shadow-sm hover:shadow-md hover:bg-base-300 transition-all flex flex-col items-center justify-center"
-                    >
-                      <span className="font-semibold text-lg">{game.host}</span>
-                      <span className="badge badge-primary mt-2">
-                        Code: {game.code}
-                      </span>
+                    .filter((game) => game.players.length < game.maxPlayers)
+                    .map((game) => (
+                      <li
+                        key={game.id}
+                        onClick={() => handleJoinGame(null, game.code)}
+                        className="cursor-pointer p-4 bg-base-200 rounded-xl shadow-sm hover:shadow-md hover:bg-base-300 transition-all flex flex-col items-center justify-center"
+                      >
+                        <span className="font-semibold text-lg">
+                          {game.host}
+                        </span>
+                        <span className="badge badge-primary mt-2">
+                          Code: {game.code}
+                        </span>
 
-                      <span className="text-xs mt-1 opacity-70">
-                        {game.visibility === "PUBLIC"
-                          ? "Partie publique"
-                          : "Partie privée"}{" "}
-                        • {game.rounds} rounds
-                      </span>
-                      <div className="mt-2 text-sm text-base-content/70">
-                        👥 {game.playersCount}/{game.maxPlayers} joueur
-                        {game.playersCount > 1 ? "s" : ""}
-                      </div>
-                    </li>
-                  ))
+                        <span className="text-xs mt-1 opacity-70">
+                          {game.visibility === "PUBLIC"
+                            ? "Partie publique"
+                            : "Partie privée"}{" "}
+                          • {game.rounds} rounds
+                        </span>
+                        <div className="mt-2 text-sm text-base-content/70">
+                          👥 {game.playersCount}/{game.maxPlayers} joueur
+                          {game.playersCount > 1 ? "s" : ""}
+                        </div>
+                      </li>
+                    ))
                 ) : (
                   <p className="text-center text-base-content/70 italic">
                     Aucune partie disponible.
                   </p>
                 )}
-              </ul>
-            )}
-          </div>
-
-          {/* LISTE DES JOUEURS CONNECTÉS */}
-          <div>
-            <div className="divider">
-              👥 Joueurs connectés ({players.length})
-            </div>
-
-            {players.length === 0 ? (
-              <p className="text-center text-base-content/70 italic">
-                Aucun joueur connecté...
-              </p>
-            ) : (
-              <ul className="grid grid-cols-1 gap-3">
-                {players.map((player) => (
-                  <li
-                    key={player.id}
-                    className={`p-3 bg-base-200 rounded-xl flex items-center justify-between ${
-                      player.name === user?.username
-                        ? "border border-primary"
-                        : ""
-                    }`}
-                  >
-                    <span className="font-medium">{player.name}</span>
-                    {player.name === user?.username && (
-                      <span className="badge badge-primary text-xs">Toi</span>
-                    )}
-                  </li>
-                ))}
               </ul>
             )}
           </div>
@@ -268,37 +334,50 @@ export default function LobbyPage() {
       {/* 🎮 MODALE CRÉER PARTIE */}
       {isCreateOpen && (
         <dialog className="modal modal-open">
-          <div className="modal-box bg-base-100">
-            <h3 className="font-bold text-lg mb-4">
-              Créer une nouvelle partie
+          <div className="modal-box bg-base-100 rounded-2xl shadow-2xl">
+            <h3 className="font-bold text-xl mb-2 text-primary flex items-center gap-2">
+              🎮 Créer une nouvelle partie
             </h3>
-            <form onSubmit={handleCreateGame} className="space-y-4">
-              <div className="flex items-center gap-4">
-                <label className="label cursor-pointer flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="visibility"
-                    className="radio radio-primary"
-                    checked={isPublic}
-                    onChange={() => setIsPublic(true)}
-                  />
-                  <span className="label-text">Partie publique</span>
+            <p className="text-sm text-base-content/70 mb-5">
+              Configure les paramètres avant de lancer ton BlindTest.
+            </p>
+
+            <form onSubmit={handleCreateGame} className="space-y-5">
+              {/* 🌍 Visibilité */}
+              <div>
+                <label className="label mb-2">
+                  <span className="label-text font-medium">Visibilité</span>
                 </label>
-                <label className="label cursor-pointer flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="visibility"
-                    className="radio radio-secondary"
-                    checked={!isPublic}
-                    onChange={() => setIsPublic(false)}
-                  />
-                  <span className="label-text">Partie privée</span>
-                </label>
+                <div className="flex items-center gap-6">
+                  <label className="label cursor-pointer flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      className="radio radio-primary"
+                      checked={isPublic}
+                      onChange={() => setIsPublic(true)}
+                    />
+                    <span className="label-text">Publique</span>
+                  </label>
+                  <label className="label cursor-pointer flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      className="radio radio-secondary"
+                      checked={!isPublic}
+                      onChange={() => setIsPublic(false)}
+                    />
+                    <span className="label-text">Privée</span>
+                  </label>
+                </div>
               </div>
 
-              <div>
+              {/* 🔢 Rounds */}
+              <div className="form-control">
                 <label className="label">
-                  <span className="label-text">Nombre de rounds</span>
+                  <span className="label-text font-medium">
+                    Nombre de rounds (1 à 20)
+                  </span>
                 </label>
                 <input
                   type="number"
@@ -306,76 +385,127 @@ export default function LobbyPage() {
                   max="20"
                   value={rounds}
                   onChange={(e) => setRounds(Number(e.target.value))}
-                  className="input input-bordered w-full"
+                  className="input input-bordered w-full focus:ring-2 focus:ring-primary transition-all"
+                  placeholder="Ex : 10"
+                  required
                 />
+              </div>
+
+              {/* 👥 Joueurs max */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium">
+                    Nombre maximum de joueurs (2 à 45)
+                  </span>
+                </label>
                 <input
                   type="number"
                   min="2"
                   max="45"
                   value={maxPlayers}
                   onChange={(e) => setMaxPlayers(Number(e.target.value))}
-                  className="input input-bordered w-full"
+                  className="input input-bordered w-full focus:ring-2 focus:ring-secondary transition-all"
+                  placeholder="Ex : 8"
+                  required
                 />
               </div>
 
-              <div className="modal-action">
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={loading}
-                >
-                  {loading ? "Création..." : "Créer la partie"}
-                </button>
+              {/* 🧭 Actions */}
+              <div className="modal-action flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsCreateOpen(false)}
-                  className="btn"
+                  className="btn btn-ghost"
                 >
                   Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary text-white"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <span className="loading loading-spinner loading-sm"></span>
+                  ) : (
+                    "Créer la partie"
+                  )}
                 </button>
               </div>
             </form>
           </div>
+
+          {/* Overlay */}
+          <form
+            method="dialog"
+            className="modal-backdrop bg-black/40 backdrop-blur-sm"
+            onClick={() => setIsCreateOpen(false)}
+          >
+            <button>close</button>
+          </form>
         </dialog>
       )}
-
-      {/* 🔑 MODALE REJOINDRE PARTIE */}
       {/* 🔑 MODALE REJOINDRE PARTIE */}
       {isJoinOpen && (
         <dialog className="modal modal-open">
-          <div className="modal-box bg-base-100">
-            <h3 className="font-bold text-lg mb-4">
-              Rejoindre une partie privée
+          <div className="modal-box bg-base-100 rounded-2xl shadow-2xl">
+            <h3 className="font-bold text-xl mb-2 text-secondary flex items-center gap-2">
+              🔑 Rejoindre une partie privée
             </h3>
+            <p className="text-sm text-base-content/70 mb-5">
+              Entre le code à 5 caractères pour rejoindre une partie en cours.
+            </p>
 
-            <form
-              onSubmit={(e) => handleJoinGame(e)} // ✅ on appelle bien notre fonction asynchrone
-              className="space-y-4"
-            >
-              <input
-                type="text"
-                placeholder="Code de la partie"
-                className="input input-bordered w-full uppercase"
-                maxLength={5}
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                required
-              />
+            <form onSubmit={(e) => handleJoinGame(e)} className="space-y-5">
+              {/* 🧩 Code de la partie */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium">
+                    Code de la partie
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex : ABCDE"
+                  className="input input-bordered w-full uppercase text-left tracking-widest text-lg font-semibold focus:ring-secondary transition-all"
+                  maxLength={5}
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
 
-              <div className="modal-action">
-                <button type="submit" className="btn btn-secondary">
-                  Rejoindre
-                </button>
+              {/* 🎮 Actions */}
+              <div className="modal-action flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsJoinOpen(false)}
-                  className="btn"
+                  className="btn btn-ghost"
                 >
                   Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-secondary text-white"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <span className="loading loading-spinner loading-sm"></span>
+                  ) : (
+                    "Rejoindre"
+                  )}
                 </button>
               </div>
             </form>
           </div>
+
+          {/* Overlay */}
+          <form
+            method="dialog"
+            className="modal-backdrop bg-black/40 backdrop-blur-sm"
+            onClick={() => setIsJoinOpen(false)}
+          >
+            <button>close</button>
+          </form>
         </dialog>
       )}
     </main>

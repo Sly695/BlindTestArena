@@ -1,40 +1,68 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { jwtVerify } from "jose";
+import { GameStatus } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// src/app/api/games/route.js
+// ✅ Création d'une partie
 export async function POST(req) {
   try {
     const authHeader = req.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer "))
+    if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Token manquant" }, { status: 401 });
+    }
 
     const token = authHeader.split(" ")[1];
     const secret = new TextEncoder().encode(process.env.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
+    const userId = payload.id;
 
     const { visibility, rounds, maxPlayers } = await req.json();
 
-    // 🎮 Création de la partie
+    // 🚫 Vérifie si le joueur a déjà une partie non terminée
+    const existingGame = await prisma.game.findFirst({
+      where: {
+        status: { in: [GameStatus.WAITING, GameStatus.PLAYING] },
+        OR: [{ hostId: userId }, { players: { some: { userId } } }],
+      },
+      select: { id: true, code: true },
+    });
+
+    if (existingGame) {
+      return NextResponse.json(
+        {
+          error: "Tu as déjà une partie en cours.",
+          existingGameId: existingGame.id,
+        },
+        { status: 400 }
+      );
+    }
+
+    // 🎮 Création d'une nouvelle partie
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+
     const game = await prisma.game.create({
       data: {
         code,
-        visibility,
+        visibility: visibility || "PUBLIC",
         rounds: rounds || 5,
-        maxPlayers: maxPlayers,
-        hostId: payload.id,
+        maxPlayers: maxPlayers || 10,
+        hostId: userId,
+        status: "WAITING",
         players: {
           create: {
-            userId: payload.id, // le créateur rejoint automatiquement
+            userId,
           },
         },
       },
+      include: {
+        host: { select: { username: true } },
+        players: { select: { user: { select: { username: true } } } },
+      },
     });
 
-    return NextResponse.json(game, { status: 201 });
+    return NextResponse.json({ game }, { status: 201 });
   } catch (error) {
     console.error("Erreur POST /api/games :", error);
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
