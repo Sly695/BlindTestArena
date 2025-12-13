@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import next from "next";
 import { Server } from "socket.io";
 import { PrismaClient } from "@prisma/client";
+import { setupGameSocket } from "./src/lib/gameSocket.js";
 
 const prisma = new PrismaClient();
 
@@ -15,17 +16,142 @@ app.prepare().then(() => {
   const io = new Server(httpServer, {
     cors: {
       origin: "http://localhost:3000",
-      methods: ["GET", "POST, PATCH"],
+      methods: ["GET", "POST", "PATCH"],
     },
   });
 
+  // Setup le système WebSocket du jeu
+  setupGameSocket(io);
+
   // 🧠 Stockage temporaire des rooms
   const activeRooms = new Map();
+  const voteTimers = new Map(); // Stocke les timers de vote
 
   io.on("connection", (socket) => {
     console.log("🟢 Client connecté :", socket.id);
 
-    // 🔹 Rejoindre le lobby
+    // 📡 Extraire gameId et rejoindre la room du jeu
+    const gameId = socket.handshake.query.gameId;
+    if (gameId) {
+      socket.join(`game:${gameId}`);
+      console.log(`✅ Client ${socket.id} rejoint game:${gameId}`);
+      
+      // Initialiser la room s'il n'existe pas
+      const roomKey = `game:${gameId}`;
+      if (!activeRooms.has(roomKey)) {
+        activeRooms.set(roomKey, { 
+          votes: {},          // { playlistId: count, ... }
+          userVotes: {}       // { userId: playlistId, ... }
+        });
+        console.log(`📦 Room ${roomKey} créée`);
+      }
+    }
+
+    // 📡 Rebroadcaster modal:open à tous les joueurs
+    socket.on("modal:open", (data) => {
+      console.log("📱 modal:open reçu, rebroadcasting...");
+      
+      const roomKey = `game:${data.gameId}`;
+      
+      // Réinitialiser les votes pour cette partie
+      activeRooms.set(roomKey, { 
+        votes: {},           // { playlistId: count, ... }
+        userVotes: {}        // { userId: playlistId, ... }
+      });
+      console.log(`🗳️ Votes réinitialisés pour ${roomKey}`);
+      
+      // Annuler le timer précédent s'il existe
+      if (voteTimers.has(roomKey)) {
+        clearTimeout(voteTimers.get(roomKey));
+      }
+      
+      // 📊 Démarrer un timer de 10 secondes pour déterminer le gagnant
+      const timer = setTimeout(() => {
+        const room = activeRooms.get(roomKey);
+        if (!room) return;
+
+        // Déterminer le thème gagnant
+        const votes = room.votes;
+        let winnerPlaylistId;
+
+        // Si personne n'a voté → aléatoire
+        if (Object.keys(votes).length === 0 || Object.values(votes).every(v => v === 0)) {
+          const playlists = [
+            "9563400362", "1363560485", "751764391",
+            "1306931615", "3153080842", "10153594502"
+          ];
+          winnerPlaylistId = playlists[Math.floor(Math.random() * playlists.length)];
+          console.log("❌ Aucun vote, thème aléatoire:", winnerPlaylistId);
+        } else {
+          // Trouver le max de votes
+          const maxVotes = Math.max(...Object.values(votes));
+          const winners = Object.keys(votes).filter(id => votes[id] === maxVotes);
+
+          // Si égalité → aléatoire parmi les gagnants
+          if (winners.length > 1) {
+            winnerPlaylistId = winners[Math.floor(Math.random() * winners.length)];
+            console.log("⚔️ Égalité, gagnant aléatoire:", winnerPlaylistId);
+          } else {
+            winnerPlaylistId = winners[0];
+            console.log("🏆 Gagnant:", winnerPlaylistId);
+          }
+        }
+
+        console.log("� Envoi du thème gagnant à la room:", winnerPlaylistId);
+        
+        // 📢 Envoyer le gagnant à TOUS les joueurs
+        io.to(roomKey).emit("vote:finalized", {
+          gameId: data.gameId,
+          winnerPlaylistId,
+        });
+
+        voteTimers.delete(roomKey);
+      }, 10000); // 10 secondes
+
+      voteTimers.set(roomKey, timer);
+      
+      io.to(`game:${data.gameId}`).emit("modal:open", data);
+    });
+
+    // 📡 Rebroadcaster round:created à tous les joueurs
+    socket.on("round:created", (data) => {
+      console.log("📡 round:created reçu, rebroadcasting...");
+      io.to(`game:${data.gameId}`).emit("round:created", data);
+    });
+
+    // 📊 Rebroadcaster les votes en temps réel
+    socket.on("vote:submitted", (data) => {
+      console.log("🗳️ Vote reçu:", data);
+      
+      const roomKey = `game:${data.gameId}`;
+      if (activeRooms.has(roomKey)) {
+        const room = activeRooms.get(roomKey);
+        
+        // Si l'utilisateur a déjà voté, décrémenter son ancien vote
+        if (room.userVotes[data.userId]) {
+          const oldPlaylistId = room.userVotes[data.userId];
+          room.votes[oldPlaylistId] = Math.max(0, (room.votes[oldPlaylistId] || 0) - 1);
+          console.log(`🗳️ Ancien vote supprimé pour ${data.userId} sur ${oldPlaylistId}`);
+        }
+        
+        // Incrémenter le nouveau vote
+        room.votes[data.playlistId] = (room.votes[data.playlistId] || 0) + 1;
+        
+        // Mémoriser le vote de cet utilisateur
+        room.userVotes[data.userId] = data.playlistId;
+        
+        console.log("📊 Votes mis à jour:", room.votes);
+        console.log("👤 Votes utilisateurs:", room.userVotes);
+        
+        // Envoyer les votes mis à jour à TOUS les joueurs de la room
+        io.to(roomKey).emit("votes:updated", {
+          gameId: data.gameId,
+          votes: room.votes,
+        });
+      }
+    });
+
+    // �🔹 Rejoindre le lobby
     socket.on("join_lobby", (player) => {
       socket.join("lobby");
       io.to("lobby").emit("player_connected", player);

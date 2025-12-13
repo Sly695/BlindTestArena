@@ -2,9 +2,10 @@
 import { useState, useEffect, useRef } from "react";
 import { Music, Mic2, Zap, Heart, Disc3, Radio, Flame } from "lucide-react";
 
-export default function RoundChoice({ onVoteEnd, closeModal }) {
+export default function RoundChoice({ onVoteEnd, closeModal, gameId, userId, socket }) {
   const [selected, setSelected] = useState(null);
   const [countdown, setCountdown] = useState(10);
+  const [votes, setVotes] = useState({}); // { playlistId: count, ... }
   const timerRef = useRef(null);
 
   const playlists = [
@@ -15,6 +16,34 @@ export default function RoundChoice({ onVoteEnd, closeModal }) {
     { id: "3153080842", name: "Afrobeat", icon: <Zap className="w-6 h-6" /> },
     { id: "10153594502", name: "Electro", icon: <Music className="w-6 h-6" /> },
   ];
+
+  // 📡 Écouter les mises à jour de votes et le résultat final via la socket passée en props
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on("votes:updated", (data) => {
+      console.log("📊 Votes mis à jour:", data);
+      setVotes(data.votes);
+    });
+
+    // 📢 Écouter le thème gagnant déterminé par le serveur
+    socket.on("vote:finalized", (data) => {
+      console.log("🏆 Thème finalisé par le serveur:", data);
+      clearInterval(timerRef.current);
+      
+      // Trouver la playlist correspondante
+      const winnerPlaylist = playlists.find(p => p.id === data.winnerPlaylistId);
+      if (winnerPlaylist) {
+        onVoteEnd(winnerPlaylist.id);
+        closeModal();
+      }
+    });
+
+    return () => {
+      socket.off("votes:updated");
+      socket.off("vote:finalized");
+    };
+  }, [socket, playlists, onVoteEnd, closeModal]);
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -29,25 +58,25 @@ export default function RoundChoice({ onVoteEnd, closeModal }) {
   }, []);
 
   const finalizeVote = () => {
-    clearInterval(timerRef.current);
-
-    const finalPlaylist =
-      selected || playlists[Math.floor(Math.random() * playlists.length)];
-
-    onVoteEnd(finalPlaylist.id);
-    closeModal();
+    // ⏳ Ne rien faire ici - attendre que le serveur envoie vote:finalized
+    console.log("⏳ En attente de la décision du serveur...");
   };
 
   
   const selectTheme = (playlistId) => {
     setSelected(playlistId);
 
-    // ✔ stop timer dès qu'on clique
-    clearInterval(timerRef.current);
+    // 📡 Émettre le vote via WebSocket
+    if (socket && gameId && userId) {
+      socket.emit("vote:submitted", {
+        gameId,
+        userId,
+        playlistId,
+      });
+    }
 
-    // ✔ finalise immédiatement AVEC le bon ID de playlist
-    onVoteEnd(playlistId);
-    closeModal();
+    // ❌ NE PAS fermer la modale immédiatement
+    // La modale se ferme seulement quand le décompte termine
   };
   
 return (
@@ -71,6 +100,10 @@ return (
             <div className="card-body items-center text-center gap-2 py-6">
               <div className="text-primary">{playlist.icon}</div>
               <h3 className="font-semibold text-base">{playlist.name}</h3>
+              {/* 📊 Afficher le compteur de votes toujours */}
+              <div className="text-sm font-semibold text-success">
+                {votes[playlist.id] || 0} joueurs
+              </div>
             </div>
           </div>
         ))}

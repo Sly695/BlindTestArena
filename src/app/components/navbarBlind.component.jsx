@@ -2,16 +2,12 @@ import { Volume2, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
-import io from "socket.io-client";
-
-const socket = io(process.env.NEXT_PUBLIC_API_WS_URL, {
-  transports: ["websocket"],
-});
-
 export default function NavbarBlind({
   game,
-  onOpenRoundChoice,
+  onStart,
+  startDisabled,
   displayMessage,
+  socket,
 }) {
   const [isQuitModalOpen, setIsQuitModalOpen] = useState(false);
   const { token, user } = useAuth();
@@ -55,10 +51,13 @@ export default function NavbarBlind({
           )}
           {game && user?.id === game.hostId && gameIsFull && (
             <button
-              onClick={onOpenRoundChoice}
-              className="btn btn-sm btn-success flex items-center gap-2 font-medium ml-auto mr-4"
+              onClick={onStart}
+              disabled={startDisabled}
+              className={`btn btn-sm btn-success flex items-center gap-2 font-medium ml-auto mr-4 ${
+                startDisabled ? "opacity-50 cursor-not-allowed" : ""
+              }`}
             >
-              Lancer un vote de thème
+              Démarrer
             </button>
           )}
           <button
