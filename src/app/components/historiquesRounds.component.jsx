@@ -10,6 +10,7 @@ export default function HistoriqueRounds() {
   const [rounds, setRounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [totalRounds, setTotalRounds] = useState(null);
 
   const audioRef = useRef(null);
   const [activeId, setActiveId] = useState(null);
@@ -22,13 +23,22 @@ export default function HistoriqueRounds() {
     if (!gameId) return;
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}/rounds`
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erreur de chargement");
+      // Récupère les rounds
+      const [roundsRes, gameRes] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}/rounds`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}`),
+      ]);
 
-      setRounds(data);
+      const roundsData = await roundsRes.json();
+      const gameData = await gameRes.json();
+
+      if (!roundsRes.ok)
+        throw new Error(roundsData.error || "Erreur de chargement des rounds");
+      if (!gameRes.ok)
+        throw new Error(gameData.error || "Erreur de chargement de la partie");
+
+      setRounds(roundsData);
+      setTotalRounds(gameData.rounds || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -98,7 +108,19 @@ export default function HistoriqueRounds() {
   return (
     <div className="card bg-base-100 rounded-2xl p-4 flex flex-col h-full">
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-        <Music2 className="w-5 h-5 text-primary" /> Historique des rounds
+        <Music2 className="w-5 h-5 text-primary" />
+        <span>Historique des rounds</span>
+        {/* Round actuel / total */}
+        <span className="ml-auto text-sm opacity-70">
+          {(() => {
+            const currentIndex = rounds.length
+              ? Math.max(...rounds.map((r) => r.roundIndex || 0))
+              : 0;
+            return totalRounds
+              ? `Round ${currentIndex}/${totalRounds}`
+              : `Round ${currentIndex}`;
+          })()}
+        </span>
       </h2>
 
       {revealedRounds.length === 0 ? (

@@ -6,6 +6,7 @@ export default function Lecteur({ round, state }) {
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [autoPlayError, setAutoPlayError] = useState(false);
 
   const isHidden = state !== "REVEALED"; // 🎭 On masque tant que pas révélé
 
@@ -30,11 +31,38 @@ export default function Lecteur({ round, state }) {
     audio.addEventListener("timeupdate", updateProgress);
     audio.addEventListener("ended", () => setIsPlaying(false));
 
+    // Tenter de lancer automatiquement la musique à l'arrivée du round
+    const tryAutoplay = async () => {
+      if (state === "STARTED") {
+        try {
+          await audio.play();
+          setIsPlaying(true);
+          setAutoPlayError(false);
+        } catch (e) {
+          // Autoplay peut être bloqué par le navigateur sans interaction
+          setAutoPlayError(true);
+          setIsPlaying(false);
+          console.warn("Autoplay bloqué — cliquez sur Play", e);
+        }
+      }
+    };
+    // Si l'audio est prêt, essayer immédiatement, sinon attendre l'événement
+    if (audio.readyState >= 2) {
+      tryAutoplay();
+    } else {
+      const onCanPlay = () => tryAutoplay();
+      audio.addEventListener("canplay", onCanPlay, { once: true });
+      // cleanup listener
+      return () => {
+        audio.removeEventListener("canplay", onCanPlay);
+      };
+    }
+
     return () => {
       audio.removeEventListener("timeupdate", updateProgress);
       audio.removeEventListener("ended", () => setIsPlaying(false));
     };
-  }, [round]);
+  }, [round, state]);
 
   // Lecture / pause
   useEffect(() => {
@@ -115,6 +143,13 @@ export default function Lecteur({ round, state }) {
       >
         {isPlaying ? <Pause /> : <Play />}
       </button>
+
+      {/* Message d'aide si l'autoplay est bloqué */}
+      {autoPlayError && (
+        <div className="absolute -bottom-6 left-4 text-xs opacity-70">
+          Autoplay bloqué par le navigateur — cliquez sur Play
+        </div>
+      )}
     </div>
   );
 }

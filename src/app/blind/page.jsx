@@ -10,6 +10,7 @@ import ChatAnswer from "../components/chatAnswer.component";
 import NavbarBlind from "../components/navbarBlind.component";
 import Lecteur from "../components/lecteur.component";
 import RoundChoice from "../components/roundChoice.component";
+import Podium from "../components/podium.component";
 
 export default function BlindTestRoom() {
   const { token, user } = useAuth();
@@ -29,6 +30,8 @@ export default function BlindTestRoom() {
   const [chosenTheme, setChosenTheme] = useState(null);
   const creatingRound = useRef(false);
   const themeMessageRef = useRef(null);
+  const [podiumOpen, setPodiumOpen] = useState(false);
+  const [podiumPlayers, setPodiumPlayers] = useState([]);
 
   // -------------------------------------
   // Texte dynamique du header
@@ -62,6 +65,10 @@ export default function BlindTestRoom() {
       );
       const data = await res.json();
       setGame(data);
+      // Désactiver Start si la partie n'est pas en attente
+      if (data?.status && data.status !== "WAITING") {
+        setStartDisabled(true);
+      }
     };
 
     if (token && gameId) load();
@@ -74,12 +81,25 @@ export default function BlindTestRoom() {
     if (!gameId) return;
 
     // Connexion au serveur WebSocket avec gameId en query param
-    socketRef.current = io(process.env.NEXT_PUBLIC_API_WS_URL || "http://localhost:3001", {
-      query: { gameId },
-    });
+    socketRef.current = io(
+      process.env.NEXT_PUBLIC_API_WS_URL || "http://localhost:3001",
+      {
+        query: { gameId },
+      }
+    );
 
     socketRef.current.on("connect", () => {
       console.log("✅ WebSocket connecté");
+    });
+
+    // Synchroniser l'état dès la connexion
+    socketRef.current.on("game:synced", ({ game, gameState }) => {
+      if (game?.status && game.status !== "WAITING") {
+        setStartDisabled(true);
+      }
+      if (gameState?.roundPhase && gameState.roundPhase !== "THEME_SELECTION") {
+        setStartDisabled(true);
+      }
     });
 
     // Pause après reveal : afficher un décompte dans la navbar
@@ -121,6 +141,102 @@ export default function BlindTestRoom() {
       if (data?.status === "STARTED") {
         setStartDisabled(true);
       }
+      // Si le serveur renvoie l'état complet, garder players à jour
+      if (data?.players) {
+        setGame((prev) => ({ ...(prev || {}), ...(data || {} ) }));
+      }
+    });
+
+    // Mise à jour temps réel quand un joueur rejoint la room via chat
+    socketRef.current.on("player_joined", (player) => {
+      setGame((prev) => {
+        if (!prev) return prev;
+        const exists = prev.players?.some(
+          (p) => (p.user?.id ?? p.userId ?? p.id) === player.id
+        );
+        const newPlayers = exists
+          ? prev.players
+          : [
+              ...prev.players,
+              { id: player.id, user: { id: player.id, username: player.username }, score: 0 },
+            ];
+        return { ...prev, players: newPlayers };
+      });
+    });
+
+    // Mise à jour quand un joueur quitte (désactiver Start si non plein)
+    socketRef.current.on("player_left", ({ userId }) => {
+      setGame((prev) => {
+        if (!prev?.players) return prev;
+        const newPlayers = prev.players.filter(
+          (p) => (p.user?.id ?? p.userId ?? p.id) !== userId
+        );
+        return { ...prev, players: newPlayers };
+      });
+    });
+
+    // L'hôte a terminé la partie -> afficher pop-up et renvoyer au lobby
+    socketRef.current.on("game:host_left", ({ message }) => {
+      setDisplayMessage("Partie terminée par l’hôte");
+      // simple modal inline via alert-style dialog
+      const dialog = document.createElement("dialog");
+      dialog.className = "modal modal-open";
+      dialog.innerHTML = `
+        <div class="modal-box bg-base-100 rounded-2xl">
+          <h3 class="font-bold text-lg text-error">${message || "L’hôte a terminé la partie."}</h3>
+          <p class="py-2">Retour au lobby...</p>
+          <div class="modal-action">
+            <button id="go-lobby" class="btn btn-error text-white">OK</button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop bg-black/40 backdrop-blur-sm"></form>
+      `;
+      document.body.appendChild(dialog);
+      dialog.showModal();
+      const go = () => {
+        try { socketRef.current?.disconnect(); } catch {}
+        window.location.href = "/home";
+      };
+      dialog.querySelector("#go-lobby")?.addEventListener("click", go);
+      setTimeout(go, 2500);
+    });
+
+    // Fin de partie: ouvrir le podium avec les scores réels
+    socketRef.current.on("game:finished", async (payload) => {
+      const g = payload?.game;
+      if (!g) return;
+
+      const total = g.rounds ?? 0;
+      const played = g.roundsData?.length ?? currentRound?.roundIndex ?? 0;
+      setDisplayMessage(`Partie terminée — ${played}/${total}`);
+
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await res.json();
+        const realPlayers = (data.players || []).map((p) => ({
+          id: p.id,
+          username: p.user?.username || p.username || "Joueur",
+          score: p.score || 0,
+        }));
+        realPlayers.sort((a, b) => b.score - a.score);
+        setPodiumPlayers(realPlayers);
+      } catch (err) {
+        console.error("Erreur chargement des scores réels:", err);
+        // Fallback: utiliser le payload tel quel si disponible
+        const fallbackPlayers = (g.players || [])
+          .map((p) => ({
+            id: p.id,
+            username: p.user?.username || p.username || "Joueur",
+            score: p.score || 0,
+          }))
+          .sort((a, b) => b.score - a.score);
+        setPodiumPlayers(fallbackPlayers);
+      }
+
+      setPodiumOpen(true);
     });
 
     // 📡 ÉCOUTER l'ouverture de modale
@@ -137,6 +253,11 @@ export default function BlindTestRoom() {
       if (data.round) {
         setCurrentRound(data.round);
         setRoundState("STARTED");
+        if (game?.rounds) {
+          setDisplayMessage(
+            `Round ${data.round.roundIndex}/${game.rounds} en cours…`
+          );
+        }
         const duration = data.round.answerTime ?? 30;
         setTimeout(() => {
           setRoundState("FINISHED");
@@ -155,17 +276,17 @@ export default function BlindTestRoom() {
   // Ouvrir la modale
   // -------------------------------------
   const playlistMap = {
-    "9563400362": "Rap FR",
-    "1363560485": "Pop Internationale",
-    "751764391": "Années 2000",
-    "1306931615": "Rock",
-    "3153080842": "Afrobeat",
-    "10153594502": "Electro",
+    9563400362: "Rap FR",
+    1363560485: "Pop Internationale",
+    751764391: "Années 2000",
+    1306931615: "Rock",
+    3153080842: "Afrobeat",
+    10153594502: "Electro",
   };
 
   const openThemeModal = () => {
     setShowModal(true);
-    
+
     // ✅ Émettre à TOUS les joueurs
     if (socketRef.current) {
       socketRef.current.emit("modal:open", {
@@ -193,80 +314,13 @@ export default function BlindTestRoom() {
   // FIN DU VOTE → Démarre un nouveau round
   // -------------------------------------
   const handleThemeEnd = async (playlistId) => {
-    if (creatingRound.current) return;
-    creatingRound.current = true;
-
-    // 📝 Récupérer le nom du thème choisi
+    // Centralisation serveur: ne plus créer le round côté client
+    // On affiche seulement le thème choisi et on ferme la modale.
     const themeName = playlistMap[playlistId] || "Thème inconnu";
     setChosenTheme(themeName);
-    
-    // 📢 Afficher immédiatement le message du thème
     setDisplayMessage(`✅ Le thème choisi est "${themeName}"`);
     themeMessageRef.current = themeName;
-
     setShowModal(false);
-
-    try {
-      // 1) Récupère une chanson aléatoire de la playlist
-      const search = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/deezer/playlist/${playlistId}`
-      );
-
-      const track = await search.json();
-
-      if (!search.ok) {
-        console.error("Erreur Deezer :", track.error);
-        alert("Impossible de trouver une musique pour ce thème !");
-        creatingRound.current = false;
-        return;
-      }
-
-      // 2) Création du round
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}/rounds`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            songTitle: track.name,
-            artist: track.artist,
-            previewUrl: track.preview_url,
-            coverUrl: track.cover,
-            spotifyUrl: track.spotify_url,
-          }),
-        }
-      );
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        alert("Erreur lors de la création du round !");
-        creatingRound.current = false;
-        return;
-      }
-
-      setCurrentRound(data.round);
-
-      // 📡 Émettre l'événement WebSocket pour notifier les autres joueurs
-      if (socketRef.current) {
-        socketRef.current.emit("round:created", {
-          gameId,
-          round: data.round,
-        });
-      }
-
-      // 3) Lancer round
-      setRoundState("STARTED");
-
-      const duration = data.round.answerTime ?? 30;
-
-      setTimeout(() => {
-        setRoundState("FINISHED");
-      }, duration * 1000);
-    } catch (err) {
-      console.error("Erreur round :", err);
-      alert("Impossible de démarrer le round, réessaie !");
-    }
   };
   // -------------------------------------
   // FINISHED → mettre à jour backend et aller vers REVEALED
@@ -333,7 +387,6 @@ export default function BlindTestRoom() {
         game={game}
         onStart={handleStart}
         startDisabled={startDisabled}
-        socket={socketRef.current}
         displayMessage={displayMessage}
       />
 
@@ -376,6 +429,32 @@ export default function BlindTestRoom() {
             <button onClick={() => setShowModal(false)}>close</button>
           </form>
         </dialog>
+      )}
+
+      {/* Podium */}
+      {podiumOpen && (
+        <Podium
+          players={podiumPlayers}
+          onQuit={async () => {
+            try {
+              await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}/leave`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                }
+              );
+            } catch (e) {
+              console.error("Erreur quit:", e);
+            }
+            if (socketRef.current) socketRef.current.disconnect();
+            router.push("/home");
+          }}
+          onClose={() => setPodiumOpen(false)}
+        />
       )}
     </main>
   );

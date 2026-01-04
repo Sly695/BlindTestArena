@@ -2,12 +2,17 @@ import { Volume2, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
+import io from "socket.io-client";
+
+const socket = io(process.env.NEXT_PUBLIC_API_WS_URL, {
+  transports: ["websocket"],
+});
+
 export default function NavbarBlind({
   game,
   onStart,
   startDisabled,
   displayMessage,
-  socket,
 }) {
   const [isQuitModalOpen, setIsQuitModalOpen] = useState(false);
   const { token, user } = useAuth();
@@ -20,6 +25,16 @@ export default function NavbarBlind({
 
   const confirmQuit = async () => {
     setIsQuitModalOpen(false);
+    // Informer les autres joueurs en temps réel
+    try {
+      if (game && user?.id === game.hostId) {
+        socket.emit("host:quit", { gameId, hostId: user.id });
+      } else {
+        socket.emit("player:left", { gameId, userId: user?.id });
+      }
+    } catch (e) {
+      console.warn("Emission socket quit échouée:", e);
+    }
     await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}/leave`,
       {
@@ -43,22 +58,23 @@ export default function NavbarBlind({
               🎵 BlindTest Arena : {displayMessage}
             </p>
           </div>
-          {game && user?.id === game.hostId && !gameIsFull && (
-            <div className="text-sm opacity-70">
-              En attente des joueurs... ({game.players.length}/{game.maxPlayers}
-              )
+          {game && user?.id === game.hostId && game.status === "WAITING" && (
+            <div className="flex items-center gap-3 ml-auto mr-4">
+              <div className="text-sm opacity-70">
+                Joueurs: {game.players.length}/{game.maxPlayers}
+              </div>
+              <button
+                onClick={onStart}
+                disabled={startDisabled || game.players.length < game.maxPlayers}
+                className={`btn btn-sm btn-success flex items-center gap-2 font-medium ${
+                  startDisabled || game.players.length < game.maxPlayers
+                    ? "opacity-50 cursor-not-allowed"
+                    : ""
+                }`}
+              >
+                Démarrer
+              </button>
             </div>
-          )}
-          {game && user?.id === game.hostId && gameIsFull && (
-            <button
-              onClick={onStart}
-              disabled={startDisabled}
-              className={`btn btn-sm btn-success flex items-center gap-2 font-medium ml-auto mr-4 ${
-                startDisabled ? "opacity-50 cursor-not-allowed" : ""
-              }`}
-            >
-              Démarrer
-            </button>
           )}
           <button
             onClick={handleQuit}

@@ -55,6 +55,13 @@ export default function RoundChoice({ onVoteEnd, closeModal, gameId, userId, soc
         return prev - 1;
       });
     }, 1000);
+    // Cleanup to prevent multiple intervals and ensure 1s steps
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, []);
 
   const finalizeVote = () => {

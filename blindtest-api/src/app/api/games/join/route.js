@@ -55,7 +55,14 @@ export async function POST(req) {
       return NextResponse.json({ error: "Partie introuvable" }, { status: 404 });
     }
 
-    // 🚷 Étape 3 : Vérifie si la partie est pleine
+    // 🚷 Étape 3 : Vérifie le statut de la partie et la capacité
+    if (game.status === GameStatus.FINISHED) {
+      return NextResponse.json({ error: "Partie terminée" }, { status: 400 });
+    }
+    // Optionnel: bloquer si la partie n'est pas en attente (privé en cours autorisé?)
+    // if (game.status !== GameStatus.WAITING) {
+    //   return NextResponse.json({ error: "Partie indisponible" }, { status: 400 });
+    // }
     if (game.players.length >= game.maxPlayers) {
       return NextResponse.json({ error: "Partie complète" }, { status: 400 });
     }

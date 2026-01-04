@@ -7,6 +7,7 @@ export default function ChatAnswer({ gameId, user }) {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [awardNotice, setAwardNotice] = useState(null);
   const messagesEndRef = useRef(null);
 
   // 🔌 Connexion WebSocket
@@ -26,6 +27,22 @@ export default function ChatAnswer({ gameId, user }) {
     s.on("new_message", (msg) => {
       if (msg.user.username === user?.username) return; // 👈 déjà affiché localement
       setMessages((prev) => [...prev, msg]);
+    });
+
+    // écouter les scores mis à jour
+    s.on("score:updated", (payload) => {
+      if (payload?.userId !== user?.id) return;
+      const { points, awarded } = payload;
+      let text = `+${points} points!`;
+      if (awarded?.title && awarded?.artist) {
+        text = "+30 points (titre + artiste)!";
+      } else if (awarded?.title) {
+        text = "+20 points (titre)!";
+      } else if (awarded?.artist) {
+        text = "+10 points (artiste)!";
+      }
+      setAwardNotice(text);
+      setTimeout(() => setAwardNotice(null), 2500);
     });
 
     return () => s.disconnect();
@@ -56,6 +73,12 @@ export default function ChatAnswer({ gameId, user }) {
   return (
     <div className="mt-8 flex flex-col flex-1 border-t border-base-300">
       <h3 className="font-semibold text-lg mb-2">💬 Chat général</h3>
+
+      {awardNotice && (
+        <div className="alert alert-success mb-2">
+          <span>{awardNotice}</span>
+        </div>
+      )}
 
       {/* Liste des messages */}
       <div

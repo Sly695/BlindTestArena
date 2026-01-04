@@ -10,7 +10,10 @@ export async function GET(req, context) {
     const { id } = await context.params;
 
     if (!id) {
-      return NextResponse.json({ error: "ID de partie manquant" }, { status: 400 });
+      return NextResponse.json(
+        { error: "ID de partie manquant" },
+        { status: 400 }
+      );
     }
 
     // 🔍 Recherche la partie
@@ -21,14 +24,19 @@ export async function GET(req, context) {
           select: { username: true, email: true },
         },
         players: {
-          include: { user: { select: { username: true, email: true } } },
+          include: {
+            user: { select: { id: true, username: true, email: true } },
+          },
         },
         roundsData: true,
       },
     });
 
     if (!game) {
-      return NextResponse.json({ error: "Partie introuvable" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Partie introuvable" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json(game, { status: 200 });

@@ -32,9 +32,22 @@ export default function AuthPage() {
     setStatus(null);
     try {
       if (isSignUp) {
-        await register(values.username, values.email, values.password);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: values.username, email: values.email, password: values.password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Erreur d'inscription");
+        setStatus("Inscription réussie. Vérifie ton email pour activer le compte.");
+        return; // ne pas rediriger immédiatement
       } else {
-        await login(values.email, values.password);
+        try {
+          await login(values.email, values.password);
+        } catch (err) {
+          setStatus(err.message || "Erreur de connexion");
+          return;
+        }
       }
       router.push("/home");
     } catch (err) {
@@ -69,9 +82,11 @@ export default function AuthPage() {
             }}
             validationSchema={validationSchema}
             onSubmit={handleSubmit}
+            validateOnChange={false}
+            validateOnBlur={true}
           >
             {({ isSubmitting, status }) => (
-              <Form className="space-y-3">
+              <Form className="space-y-3" autoComplete="off">
                 {/* Pseudo */}
                 {isSignUp && (
                   <div className="form-control">
@@ -80,6 +95,9 @@ export default function AuthPage() {
                       name="username"
                       placeholder="Pseudo"
                       className="input input-bordered w-full"
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
                     />
                     <ErrorMessage
                       name="username"
@@ -96,6 +114,9 @@ export default function AuthPage() {
                     name="email"
                     placeholder="Adresse mail"
                     className="input input-bordered w-full"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
                   />
                   <ErrorMessage
                     name="email"
@@ -111,12 +132,20 @@ export default function AuthPage() {
                     name="password"
                     placeholder="Mot de passe"
                     className="input input-bordered w-full"
+                    autoComplete={isSignUp ? "new-password" : "current-password"}
+                    autoCapitalize="none"
+                    spellCheck={false}
                   />
                   <ErrorMessage
                     name="password"
                     component="div"
                     className="text-error text-sm mt-1"
                   />
+                  {!isSignUp && (
+                    <div className="mt-2 text-right">
+                      <a href="/auth/forgetPassword" className="link link-primary text-sm">Mot de passe oublié ?</a>
+                    </div>
+                  )}
                 </div>
 
                 {/* Message d’erreur global */}

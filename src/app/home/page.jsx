@@ -17,6 +17,9 @@ export default function LobbyPage() {
   // 🧩 Modales
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
+  const [isErrorOpen, setIsErrorOpen] = useState(false);
+  const [errorTitle, setErrorTitle] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   // 🎮 Formulaire de création
   const [isPublic, setIsPublic] = useState(true);
@@ -191,10 +194,23 @@ export default function LobbyPage() {
 
       const data = await res.json();
 
-      if (!res.ok)
-        throw new Error(
-          data.error || "Erreur lors de la connexion à la partie"
+      if (!res.ok) {
+        const msg = data.error || "Erreur lors de la connexion à la partie";
+        // Affiche une modale soignée pour 'Partie terminée'
+        setIsJoinOpen(false);
+        setErrorTitle(
+          msg.toLowerCase().includes("terminée")
+            ? "Partie terminée"
+            : "Impossible de rejoindre"
         );
+        setErrorMessage(
+          msg.toLowerCase().includes("terminée")
+            ? "Cette partie a été terminée par l’hôte. Tu ne peux plus la rejoindre."
+            : msg
+        );
+        setIsErrorOpen(true);
+        return;
+      }
 
       // ✅ Redirection vers la page du blind test
       console.log(data);
@@ -204,11 +220,24 @@ export default function LobbyPage() {
       }, 150);
     } catch (err) {
       console.error("Erreur handleJoinGame :", err);
-      alert(err.message || "Erreur serveur");
+      setIsJoinOpen(false);
+      const msg = err.message || "Erreur serveur";
+      setErrorTitle(
+        msg.toLowerCase().includes("terminée")
+          ? "Partie terminée"
+          : "Erreur"
+      );
+      setErrorMessage(
+        msg.toLowerCase().includes("terminée")
+          ? "Cette partie a été terminée par l’hôte. Tu ne peux plus la rejoindre."
+          : msg
+      );
+      setIsErrorOpen(true);
     }
   };
 
   return (
+    <>
     <main className="min-h-screen flex flex-col items-center justify-center bg-base-200 p-6">
       {/* 🌟 NAVBAR "Rejoindre la partie en cours" */}
       {!checkingGame && activeGame && (
@@ -509,5 +538,23 @@ export default function LobbyPage() {
         </dialog>
       )}
     </main>
+    {/* ❌ MODALE ERREUR JOIN */}
+    {isErrorOpen && (
+      <dialog className="modal modal-open">
+        <div className="modal-box bg-base-100 rounded-2xl shadow-2xl">
+          <h3 className="font-bold text-lg text-error">{errorTitle}</h3>
+          <p className="py-3 text-base-content/80">{errorMessage}</p>
+          <div className="modal-action">
+            <button className="btn btn-error text-white" onClick={() => setIsErrorOpen(false)}>
+              OK
+            </button>
+          </div>
+        </div>
+        <form method="dialog" className="modal-backdrop bg-black/40 backdrop-blur-sm" onClick={() => setIsErrorOpen(false)}>
+          <button>close</button>
+        </form>
+      </dialog>
+    )}
+    </>
   );
 }

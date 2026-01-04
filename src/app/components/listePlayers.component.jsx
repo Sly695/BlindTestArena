@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import io from "socket.io-client";
 import { useSearchParams } from "next/navigation";
 
 export default function ListePlayers() {
@@ -7,6 +8,7 @@ export default function ListePlayers() {
   const gameId = searchParams.get("gameId");
 
   const [players, setPlayers] = useState([]);
+  const [socket, setSocket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [gameCode, setGameCode] = useState(null);
@@ -16,13 +18,17 @@ export default function ListePlayers() {
   const fetchPlayers = async () => {
     if (!gameId) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}`);
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/games/${gameId}`
+      );
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || "Erreur de chargement des joueurs");
+      if (!res.ok)
+        throw new Error(data.error || "Erreur de chargement des joueurs");
 
       setPlayers(
         data.players.map((p) => ({
+          userId: p.user.id,
           name: p.user.username,
           score: p.score || 0,
         }))
@@ -41,7 +47,33 @@ export default function ListePlayers() {
   useEffect(() => {
     fetchPlayers();
     const interval = setInterval(fetchPlayers, 5000); // toutes les 5 secondes
-    return () => clearInterval(interval);
+    // Connexion WebSocket pour mises à jour en temps réel
+    const s = io(
+      process.env.NEXT_PUBLIC_API_WS_URL || "http://localhost:3001",
+      {
+        transports: ["websocket"],
+        query: { gameId },
+      }
+    );
+    setSocket(s);
+
+    s.on("score:updated", ({ userId, points }) => {
+      // Met à jour localement le score du joueur sans attendre le polling
+      setPlayers((prev) => {
+        const copy = prev.map((p) => ({ ...p }));
+        const idx = copy.findIndex((p) => p.userId === userId);
+        // si on ne retrouve pas via id, on laisse le polling REST corriger
+        if (idx !== -1) {
+          copy[idx].score = (copy[idx].score || 0) + points;
+        }
+        return copy;
+      });
+    });
+
+    return () => {
+      clearInterval(interval);
+      s.disconnect();
+    };
   }, [gameId]);
 
   if (loading) {
@@ -66,7 +98,9 @@ export default function ListePlayers() {
       <h2 className="text-xl font-bold mb-4">👥 Joueurs connectés</h2>
 
       {players.length === 0 ? (
-        <p className="text-center italic opacity-70">Aucun joueur pour l’instant...</p>
+        <p className="text-center italic opacity-70">
+          Aucun joueur pour l’instant...
+        </p>
       ) : (
         <ul className="flex-1 overflow-y-auto space-y-3">
           {[...players]

@@ -34,6 +34,14 @@ export async function POST(req) {
       );
     }
 
+    // Refuse si email non vérifié
+    if (!user.isVerified) {
+      return NextResponse.json(
+        { error: "Email non vérifié. Consulte ta boîte mail." },
+        { status: 403 }
+      );
+    }
+
     // 🔒 Compare le mot de passe
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
