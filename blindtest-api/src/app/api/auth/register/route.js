@@ -71,6 +71,12 @@ export async function POST(req) {
           port: Number(SMTP_PORT),
           secure: Number(SMTP_PORT) === 465,
           auth: { user: SMTP_USER, pass: SMTP_PASS },
+          connectionTimeout: 10000, // 10 secondes
+          greetingTimeout: 10000,
+          socketTimeout: 10000,
+          tls: {
+            rejectUnauthorized: false,
+          },
         });
         await transporter.sendMail({
           from: SMTP_FROM || SMTP_USER,
