@@ -19,6 +19,7 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
     "nodemon": "^3.1.10",
     "prisma": "^6.16.3"
   }
