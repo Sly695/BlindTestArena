@@ -1,36 +1,26 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
-import { io } from "socket.io-client";
 
-export default function ChatAnswer({ gameId, user }) {
-  const [socket, setSocket] = useState(null);
+
+export default function ChatAnswer({ gameId, user, socket }) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [awardNotice, setAwardNotice] = useState(null);
   const messagesEndRef = useRef(null);
 
-  // 🔌 Connexion WebSocket
+  // 🔌 Écoute des messages via le socket partagé
   useEffect(() => {
-    const s = io("http://localhost:3001", {
-      transports: ["websocket"],
-    });
-    setSocket(s);
-
-    // rejoindre la room correspondant à la partie
-    s.emit("join_room", {
-      gameId,
-      player: { id: user?.id, username: user?.username },
-    });
+    if (!socket) return;
 
     // écouter les messages entrants
-    s.on("new_message", (msg) => {
+    const handleNewMessage = (msg) => {
       if (msg.user.username === user?.username) return; // 👈 déjà affiché localement
       setMessages((prev) => [...prev, msg]);
-    });
+    };
 
     // écouter les scores mis à jour
-    s.on("score:updated", (payload) => {
+    const handleScoreUpdate = (payload) => {
       if (payload?.userId !== user?.id) return;
       const { points, awarded } = payload;
       let text = `+${points} points!`;
@@ -43,10 +33,16 @@ export default function ChatAnswer({ gameId, user }) {
       }
       setAwardNotice(text);
       setTimeout(() => setAwardNotice(null), 2500);
-    });
+    };
 
-    return () => s.disconnect();
-  }, [gameId, user]);
+    socket.on("new_message", handleNewMessage);
+    socket.on("score:updated", handleScoreUpdate);
+
+    return () => {
+      socket.off("new_message", handleNewMessage);
+      socket.off("score:updated", handleScoreUpdate);
+    };
+  }, [socket, user]);
 
   // 🔽 Scroll automatique vers le bas
   useEffect(() => {

@@ -432,7 +432,7 @@ export default function BlindTestRoom() {
         {/* Lecteur + réponses */}
         <div className="card bg-base-100 shadow-xl rounded-2xl p-6 flex flex-col gap-6">
           <Lecteur round={currentRound} state={roundState} />
-          <ChatAnswer gameId={gameId} user={user} />
+          <ChatAnswer gameId={gameId} user={user} socket={socketRef.current} />
         </div>
 
         {/* Joueurs */}
