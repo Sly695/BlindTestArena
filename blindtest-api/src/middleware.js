@@ -89,7 +89,7 @@ export async function middleware(req) {
   }
 }
 
-// ⚙️ Appliquer ce middleware sur toutes les routes API
-export const config = {
-  matcher: ["/api/:path*"],
-};
+// ⚙️ Middleware désactivé - CORS géré dans server.js pour éviter les conflits
+// export const config = {
+//   matcher: ["/api/:path*"],
+// };
