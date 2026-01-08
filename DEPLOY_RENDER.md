@@ -35,11 +35,11 @@ Votre application Blind Test se compose de deux parties :
    - **Name** : `blindtest-api`
    - **Root Directory** : `blindtest-api`
    - **Environment** : `Node`
-   - **Build Command** : `npm install`
+   - **Build Command** : `npm install && npx prisma migrate deploy`
    - **Start Command** : `npm start`
    - **Plan** : Free tier
 
-**Note** : Le script `postinstall` dans package.json générera automatiquement le client Prisma.
+**Note** : Les migrations Prisma s'exécutent automatiquement à chaque déploiement grâce à la Build Command.
 
 ### Variables d'environnement du backend
 
@@ -61,16 +61,6 @@ EMAIL_PASS=votre-mot-de-passe-app
 - `DATABASE_URL` : copiez l'URL interne de votre base PostgreSQL
 - `JWT_SECRET` : générez une clé secrète forte (32+ caractères aléatoires)
 - `FRONTEND_URL` : vous l'obtiendrez après avoir déployé le frontend (ex: `https://blindtest.onrender.com`)
-
-### Appliquer les migrations Prisma
-
-Après le premier déploiement, vous devez appliquer les migrations :
-
-1. Dans le dashboard de votre service backend, allez dans **Shell**
-2. Exécutez :
-```bash
-npx prisma migrate deploy
-```
 
 ---
 
@@ -156,8 +146,8 @@ Créez une partie et vérifiez que :
 
 ---
 
-## 📝 Notes importantes
-
+##Les migrations s'appliquent automatiquement au build
+- Si besoin, redéployez manuellement le backend depuis le dashboard
 1. **Free tier limitations** :
    - Les services gratuits Render s'endorment après 15 minutes d'inactivité
    - Le premier chargement peut prendre 30-60 secondes
@@ -176,20 +166,14 @@ Créez une partie et vérifiez que :
 
 ## 🚀 Commandes utiles
 
-### Backend (depuis le Shell Render)
-```bash
-# Voir l'état de la base de données
-npx prisma studio
+### Redéploiement manuel
+- Allez dans le dashboard Render
+- Cliquez sur "Manual Deploy" → "Deploy latest commit"
+- Les migrations s'exécuteront automatiquement
 
-# Appliquer les migrations
-npx prisma migrate deploy
-
-# Générer le client Prisma
-npx prisma generate
-
-# Voir les logs
-# (disponibles directement dans le dashboard)
-```
+### Vérifier les logs
+- Les logs sont disponibles directement dans le dashboard Render
+- Vérifiez que les migrations Prisma se sont bien exécutées dans les logs de build
 
 ---
 
