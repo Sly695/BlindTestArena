@@ -35,9 +35,11 @@ Votre application Blind Test se compose de deux parties :
    - **Name** : `blindtest-api`
    - **Root Directory** : `blindtest-api`
    - **Environment** : `Node`
-   - **Build Command** : `npm install && npm run build`
+   - **Build Command** : `npm install`
    - **Start Command** : `npm start`
    - **Plan** : Free tier
+
+**Note** : Le script `postinstall` dans package.json générera automatiquement le client Prisma.
 
 ### Variables d'environnement du backend
 

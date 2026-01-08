@@ -1,20 +1,17 @@
-"use client";
-
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "../context/AuthContext";
+// Page d'accueil simple pour le backend API
+// Les vraies routes sont dans /api
 
 export default function HomePage() {
-  const router = useRouter();
-  const { user } = useAuth(); // ton contexte d’auth
-
-  useEffect(() => {
-    if (!user) {
-      router.replace("/auth"); // redirection immédiate
-    } else {
-      router.replace("/dashboard"); // ou autre page
-    }
-  }, [user, router]);
-
-  return null; // Pas besoin d'afficher quoi que ce soit ici
+  return (
+    <div style={{ padding: '2rem', fontFamily: 'system-ui' }}>
+      <h1>BlindTest API</h1>
+      <p>Le backend est opérationnel.</p>
+      <ul>
+        <li><a href="/api/games">GET /api/games</a> - Liste des parties</li>
+        <li>POST /api/auth/login - Connexion</li>
+        <li>POST /api/auth/register - Inscription</li>
+      </ul>
+    </div>
+  );
 }
+
