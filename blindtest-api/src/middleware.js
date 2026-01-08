@@ -12,6 +12,7 @@ const PROTECTED_ROUTES = [
 // 🌍 Domaines autorisés (front)
 const ALLOWED_ORIGINS = [
   "http://localhost:3000",
+  "https://localhost:3000",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
@@ -30,7 +31,7 @@ export async function middleware(req) {
 
   // ✅ Répond directement aux requêtes OPTIONS (preflight)
   if (req.method === "OPTIONS") {
-    return new NextResponse(null, { status: 200, headers: corsHeaders });
+    return new NextResponse(null, { status: 204, headers: corsHeaders });
   }
 
   // ✅ Routes publiques
@@ -89,7 +90,7 @@ export async function middleware(req) {
   }
 }
 
-// ⚙️ Middleware désactivé - CORS géré dans server.js pour éviter les conflits
-// export const config = {
-//   matcher: ["/api/:path*"],
-// };
+// ⚙️ Appliquer ce middleware sur toutes les routes API
+export const config = {
+  matcher: ["/api/:path*"],
+};
