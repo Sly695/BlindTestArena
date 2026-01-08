@@ -63,26 +63,17 @@ export async function POST(req) {
     const verifyLink = `${appUrl}/auth/verify?token=${encodeURIComponent(verifyToken)}`;
 
     try {
-      const nodemailer = await import("nodemailer");
-      const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-      if (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS) {
-        const transporter = nodemailer.default.createTransport({
-          host: SMTP_HOST,
-          port: Number(SMTP_PORT),
-          secure: Number(SMTP_PORT) === 465,
-          auth: { user: SMTP_USER, pass: SMTP_PASS },
-          connectionTimeout: 10000, // 10 secondes
-          greetingTimeout: 10000,
-          socketTimeout: 10000,
-          tls: {
-            rejectUnauthorized: false,
-          },
-        });
-        await transporter.sendMail({
-          from: SMTP_FROM || SMTP_USER,
-          to: user.email,
+      const { BREVO_API_KEY, SMTP_FROM } = process.env;
+      if (BREVO_API_KEY) {
+        const brevo = await import("@getbrevo/brevo");
+        const apiInstance = new brevo.TransactionalEmailsApi();
+        apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, BREVO_API_KEY);
+
+        await apiInstance.sendTransacEmail({
+          sender: { email: SMTP_FROM || "noreply@blindtest.com", name: "BlindTest" },
+          to: [{ email: user.email }],
           subject: "Vérifie ton adresse email",
-          html: `
+          htmlContent: `
             <p>Bienvenue ${user.username},</p>
             <p>Merci de vérifier ton email pour activer ton compte.</p>
             <p>Ce lien expire dans 15 minutes:</p>
@@ -93,7 +84,7 @@ export async function POST(req) {
         console.log("📧 Verify link:", verifyLink);
       }
     } catch (e) {
-      console.warn("Nodemailer indisponible, lien de vérification logué.", e);
+      console.warn("Brevo API indisponible, lien de vérification logué.", e);
       console.log("📧 Verify link:", verifyLink);
     }
 

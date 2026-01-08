@@ -26,29 +26,19 @@ export async function POST(req) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const resetLink = `${appUrl}/auth/reset?token=${encodeURIComponent(token)}`;
 
-    // Envoi d'email si SMTP configuré
-    const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-    if (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS) {
+    // Envoi d'email via API Brevo
+    const { BREVO_API_KEY, SMTP_FROM } = process.env;
+    if (BREVO_API_KEY) {
       try {
-        const nodemailer = await import("nodemailer");
-        const transporter = nodemailer.default.createTransport({
-          host: SMTP_HOST,
-          port: Number(SMTP_PORT),
-          secure: Number(SMTP_PORT) === 465,
-          auth: { user: SMTP_USER, pass: SMTP_PASS },
-          connectionTimeout: 10000, // 10 secondes
-          greetingTimeout: 10000,
-          socketTimeout: 10000,
-          tls: {
-            rejectUnauthorized: false, // Pour éviter les problèmes de certificat
-          },
-        });
+        const brevo = await import("@getbrevo/brevo");
+        const apiInstance = new brevo.TransactionalEmailsApi();
+        apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, BREVO_API_KEY);
 
-        await transporter.sendMail({
-          from: SMTP_FROM || SMTP_USER,
-          to: email,
+        await apiInstance.sendTransacEmail({
+          sender: { email: SMTP_FROM || "noreply@blindtest.com", name: "BlindTest" },
+          to: [{ email }],
           subject: "Réinitialisation du mot de passe",
-          html: `
+          htmlContent: `
             <p>Bonjour,</p>
             <p>Tu as demandé la réinitialisation de ton mot de passe.</p>
             <p>Utilise ce lien (valide 15 minutes):</p>
@@ -57,7 +47,7 @@ export async function POST(req) {
         });
         return NextResponse.json({ ok: true }, { status: 200 });
       } catch (e) {
-        console.warn("Nodemailer indisponible ou non installé, fallback dev.", e);
+        console.warn("Brevo API indisponible, fallback dev.", e);
       }
     }
 
