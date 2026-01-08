@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon server.js",
-    "build": "next build --turbopack",
-    "start": "next start"
+    "build": "prisma generate && next build",
+    "start": "node server.js"
   },
   "dependencies": {
     "@prisma/client": "^6.16.3",

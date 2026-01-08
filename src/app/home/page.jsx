@@ -114,9 +114,12 @@ export default function LobbyPage() {
         const game = data.game;
 
         // 🔌 connexion socket persistante
-        const socket = io("http://localhost:3001", {
-          transports: ["websocket"],
-        });
+        const socket = io(
+          process.env.NEXT_PUBLIC_API_WS_URL || "http://localhost:3001",
+          {
+            transports: ["websocket"],
+          }
+        );
 
         socket.on("connect", () => {
           console.log("🟢 Connecté WS, création de la room...");
