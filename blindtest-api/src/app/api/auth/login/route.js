@@ -14,6 +14,31 @@ async function generateToken(payload) {
     .sign(secret);
 }
 
+// Handler OPTIONS pour CORS preflight
+export async function OPTIONS(request) {
+  const allowedOrigins = [
+    "http://localhost:3000",
+    process.env.FRONTEND_URL
+  ].filter(Boolean);
+
+  const origin = request.headers.get("origin");
+  const headers = {
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+  };
+
+  if (origin && allowedOrigins.includes(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Access-Control-Allow-Credentials"] = "true";
+  }
+
+  return new NextResponse(null, {
+    status: 204,
+    headers
+  });
+}
+
 export async function POST(req) {
   try {
     const { email, password } = await req.json();
