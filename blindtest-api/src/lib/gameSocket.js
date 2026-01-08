@@ -77,9 +77,23 @@ export async function setupGameSocket(io) {
       // Envoyer l'état actuel au client
       if (gameId && game) {
         const gameState = activeGames.get(gameId);
+        
+        // Récupérer le round actuel si il existe
+        let currentRound = null;
+        if (gameState?.currentRound) {
+          currentRound = gameState.currentRound;
+        } else if (game.roundsData && game.roundsData.length > 0) {
+          // Si pas dans gameState, chercher le dernier round dans la base
+          const lastRound = game.roundsData[game.roundsData.length - 1];
+          if (lastRound.status === "STARTED" || lastRound.status === "FINISHED") {
+            currentRound = lastRound;
+          }
+        }
+        
         socket.emit("game:synced", {
           game,
           gameState,
+          currentRound,
         });
       }
 

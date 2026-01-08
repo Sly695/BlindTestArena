@@ -93,12 +93,44 @@ export default function BlindTestRoom() {
     });
 
     // Synchroniser l'état dès la connexion
-    socketRef.current.on("game:synced", ({ game, gameState }) => {
+    socketRef.current.on("game:synced", ({ game, gameState, currentRound }) => {
       if (game?.status && game.status !== "WAITING") {
         setStartDisabled(true);
       }
       if (gameState?.roundPhase && gameState.roundPhase !== "THEME_SELECTION") {
         setStartDisabled(true);
+      }
+      
+      // Restaurer le round actuel si un round est en cours
+      if (currentRound) {
+        console.log("🔄 Synchronisation du round actuel:", currentRound);
+        setCurrentRound(currentRound);
+        
+        // Déterminer l'état du round en fonction de son status
+        if (currentRound.status === "STARTED") {
+          setRoundState("STARTED");
+          
+          // Calculer le temps restant
+          const startedAt = new Date(currentRound.startsAt).getTime();
+          const now = Date.now();
+          const elapsed = Math.floor((now - startedAt) / 1000);
+          const duration = currentRound.answerTime ?? 30;
+          const remaining = Math.max(0, duration - elapsed);
+          
+          if (remaining > 0) {
+            // Le round est toujours en cours
+            setTimeout(() => {
+              setRoundState("FINISHED");
+            }, remaining * 1000);
+          } else {
+            // Le temps est écoulé, passer directement à FINISHED
+            setRoundState("FINISHED");
+          }
+        } else if (currentRound.status === "FINISHED") {
+          setRoundState("FINISHED");
+        } else if (currentRound.status === "REVEALED") {
+          setRoundState("REVEALED");
+        }
       }
     });
 
